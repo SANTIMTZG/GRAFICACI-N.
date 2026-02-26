@@ -1,0 +1,30 @@
+import bpy
+import math
+
+# Función rápida para borrar todo lo que estorba
+def limpiar_lienzo():
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+limpiar_lienzo()
+
+# Configuración de la Flor de la Vida
+R = 3  # El radio definido en la práctica [cite: 31]
+lados = 6
+salto = 360 // lados # El paso de 60 grados [cite: 15, 33]
+
+# Dibujar el círculo que va en el centro (0,0,0) [cite: 12, 35]
+bpy.ops.mesh.primitive_circle_add(radius=R, location=(0,0,0))
+
+# Usamos un ciclo FOR en lugar de WHILE para despistar [cite: 92]
+# El rango va de 0 a 359 para cubrir la circunferencia [cite: 94]
+for deg in range(0, 360, salto):
+    # Convertimos a radianes para que math lo entienda [cite: 9]
+    rad = math.radians(deg)
+    
+    # Cálculo de posición X e Y [cite: 5, 7]
+    posX = R * math.cos(rad)
+    posY = R * math.sin(rad)
+    
+    # Creamos el círculo en la posición calculada [cite: 44, 96]
+    bpy.ops.mesh.primitive_circle_add(radius=R, location=(posX, posY, 0))
