@@ -1,0 +1,136 @@
+import bpy
+import math
+import bmesh
+
+# -------------------------------------------------
+# Crear material
+# -------------------------------------------------
+def crear_material(nombre, color_rgb):  
+    mat = bpy.data.materials.get(nombre)
+    if not mat:
+        mat = bpy.data.materials.new(name=nombre)
+        mat.use_nodes = True # Asegura que use nodos para mejor visualización
+    mat.diffuse_color = (*color_rgb, 1.0)
+    return mat
+
+# -------------------------------------------------
+# Generar Pasillo y Animación
+# -------------------------------------------------
+def generar_pasillo_mixto():
+    # Limpiar escena
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Materiales (Oscuro y Naranja)
+    mat_a = crear_material("ParedOscura", (0.05, 0.05, 0.05))
+    mat_b = crear_material("ParedNaranja", (0.8, 0.2, 0.0))
+
+    segmentos_rectos = 10
+    segmentos_curvos = 25 # Un poco más largo para la cámara
+    ancho = 3
+    paso = 2
+    angulo_giro = math.radians(6)
+
+    pos = [0.0, 0.0]
+    rot = 0.0
+
+    puntos_izq = []
+    puntos_der = []
+    puntos_centro = []
+
+    total = segmentos_rectos + segmentos_curvos
+
+    # 1. Calcular puntos
+    for i in range(total):
+        if i >= segmentos_rectos:
+            rot += angulo_giro
+
+        avance_x = math.sin(rot) * paso
+        avance_y = math.cos(rot) * paso
+
+        pos[0] += avance_x
+        pos[1] += avance_y
+        
+        # Centro para la cámara
+        puntos_centro.append((pos[0], pos[1], 1.5)) 
+
+        perp = rot + math.pi / 2
+        puntos_izq.append((pos[0] + math.sin(perp) * ancho, pos[1] + math.cos(perp) * ancho, 0))
+        puntos_der.append((pos[0] - math.sin(perp) * ancho, pos[1] - math.cos(perp) * ancho, 0))
+
+    # 2. Crear Suelo
+    mesh_suelo = bpy.data.meshes.new("Suelo")
+    obj_suelo = bpy.data.objects.new("Suelo", mesh_suelo)
+    bpy.context.collection.objects.link(obj_suelo)
+    bm_suelo = bmesh.new()
+    for p in puntos_izq + list(reversed(puntos_der)):
+        bm_suelo.verts.new(p)
+    bm_suelo.verts.ensure_lookup_table()
+    bm_suelo.faces.new(bm_suelo.verts)
+    bm_suelo.to_mesh(mesh_suelo)
+    bm_suelo.free()
+
+    # -------------------------------------------------
+    # 3. Función para paredes (CORREGIDA)
+    # -------------------------------------------------
+    def crear_pared_alternada(nombre, puntos):
+        mesh = bpy.data.meshes.new(nombre)
+        obj = bpy.data.objects.new(nombre, mesh)
+        bpy.context.collection.objects.link(obj)
+
+        # IMPORTANTE: El orden aquí define el índice 0 y 1
+        obj.data.materials.append(mat_a) # Índice 0
+        obj.data.materials.append(mat_b) # Índice 1
+
+        bm = bmesh.new()
+        altura = 3.0
+        
+        v_inf = [bm.verts.new((p[0], p[1], 0)) for p in puntos]
+        v_sup = [bm.verts.new((p[0], p[1], altura)) for p in puntos]
+        
+        bm.verts.ensure_lookup_table()
+
+        for i in range(len(puntos)-1):
+            face = bm.faces.new((v_inf[i], v_inf[i+1], v_sup[i+1], v_sup[i]))
+            # Asignar material alternado
+            face.material_index = 0 if i % 2 == 0 else 1
+
+        bm.to_mesh(mesh)
+        bm.free()
+
+    crear_pared_alternada("ParedIzquierda", puntos_izq)
+    crear_pared_alternada("ParedDerecha", puntos_der)
+
+    # -------------------------------------------------
+    # 4. RECORRIDO DE CÁMARA
+    # -------------------------------------------------
+    curva_datos = bpy.data.curves.new('CaminoCamara', type='CURVE')
+    curva_datos.dimensions = '3D'
+    curva_obj = bpy.data.objects.new('CaminoCamara', curva_datos)
+    bpy.context.collection.objects.link(curva_obj)
+
+    polyline = curva_datos.splines.new('POLY')
+    polyline.points.add(len(puntos_centro) - 1)
+    for i, p in enumerate(puntos_centro):
+        polyline.points[i].co = (p[0], p[1], p[2], 1)
+
+    cam_datos = bpy.data.cameras.new("CamaraPasillo")
+    cam_obj = bpy.data.objects.new("CamaraPasillo", cam_datos)
+    bpy.context.collection.objects.link(cam_obj)
+    
+    constraint = cam_obj.constraints.new(type='FOLLOW_PATH')
+    constraint.target = curva_obj
+    constraint.use_fixed_location = True
+    constraint.use_curve_follow = True
+    constraint.forward_axis = 'TRACK_NEGATIVE_Z'
+    constraint.up_axis = 'UP_Y'
+
+    # Animación
+    cam_obj.keyframe_insert(data_path='constraints["Follow Path"].offset_factor', frame=1)
+    constraint.offset_factor = 1.0
+    cam_obj.keyframe_insert(data_path='constraints["Follow Path"].offset_factor', frame=200)
+
+    bpy.context.scene.camera = cam_obj
+
+# Ejecutar
+generar_pasillo_mixto()
